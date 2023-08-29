@@ -1,1 +1,4 @@
 *.mp3
+geckodriver.log
+.vscode/settings.json
+*.zip
