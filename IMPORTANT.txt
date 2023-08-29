@@ -1,0 +1,35 @@
+
+
+Attention Please:
+
+    to download multiple files from same host you should use requests.Session() to maintain the TCP connection session instead of keep repeat an action of opening a socket and closing it.
+    You should use a stream=True to be out of corrupted downloads.
+    before writing the content you should check the status by using .status_code for the response.
+    
+
+Below is the correct code to achieve your goal.
+
+import requests
+from bs4 import BeautifulSoup
+import re
+
+r = requests.get("https://ghalliance.org/resource/bible-reading/")
+soup = BeautifulSoup(r.text, 'html.parser')
+
+with requests.Session() as req:
+    for item in soup.select("#playlist"):
+        for href in item.findAll("a"):
+            href = href.get("href")
+            name = re.search(r"([^\/]+$)", href).group()
+            if '.' not in name[-4]:
+                name = name[:-3] + '.mp3'
+            else:
+                pass
+            print(f"Downloading File {name}")
+            download = req.get(href)
+            if download.status_code == 200:
+                with open(name, 'wb') as f:
+                    f.write(download.content)
+            else:
+                print(f"Download Failed For File {name}")
+
