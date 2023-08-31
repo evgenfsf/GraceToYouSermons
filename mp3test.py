@@ -1,19 +1,16 @@
 import requests
-from selenium import webdriver
-from bs4 import BeautifulSoup
+# from selenium import webdriver
+# from bs4 import BeautifulSoup
 import re
+from sermon_downloader import SermonDownloader
 from loguru import logger
 
-options = webdriver.FirefoxOptions()
-options.add_argument('--headless')
-driver = webdriver.Firefox(options=options)
-driver.get("https://www.gty.org/library/resources/sermons-library")
-soup = BeautifulSoup(driver.page_source, features="html.parser")
-driver.quit()           #avoids resource waisting
+down = SermonDownloader()
+down.driver.quit()
 
 download_server = "https://cdn.gty.org/sermons/High/"
 
-sermon_box = soup.find(class_='gty-asset store-library sermon')
+sermon_box = down.parser.find(class_='gty-asset store-library sermon')
 title = sermon_box.find(class_="title").span.string
 scripture = sermon_box.find(class_="scripture").span.string
 code = sermon_box.find(class_="code").span.string
