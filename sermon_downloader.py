@@ -74,8 +74,9 @@ class Sermon():
         del self
         
     def filename_correct(self):
-        fn = f"{self.scripture}_{self.title}_{self.code}.mp3"
-        return fn.translate ({ord(c): "-" for c in "!@#$%^&*()[]{};:,./<>?\|`~-=_+"})
+        fn = f"{self.scripture}_{self.title}_{self.code}"
+        fn = fn.translate({ord(c): "-" for c in "!@#$%^&*()[]{};:,./<>?\|`~-=_+"})
+        return f'{fn}.mp3'
     
     def download(self, session):
         logger.info(f"Downloading {self.filename}")
