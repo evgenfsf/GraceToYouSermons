@@ -2,3 +2,4 @@
 geckodriver.log
 .vscode/settings.json
 *.zip
+__pycache__
