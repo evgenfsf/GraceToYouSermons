@@ -5,12 +5,12 @@ import re
 from loguru import logger
 
 class SermonDownloader():
-    def __init__(self) -> None:
+    def __init__(self):
         self.driver = self.GTYDriver()
         self.parser = self.GTYParser(self.driver.page_source)
 
     class GTYDriver(webdriver.Firefox):
-        def __init__(self) -> None:
+        def __init__(self):
             defaultlink = "https://www.gty.org/library/resources/sermons-library"
             options = webdriver.FirefoxOptions()
             options.add_argument('--headless')
@@ -22,7 +22,27 @@ class SermonDownloader():
         def __init__(self, source) -> None:
             super().__init__(source, features="html.parser")
             logger.info(f"Parser started")
+        
+        def parse_sermon(self):
+            return Sermon("")
 
-class Sermon():
-    def __init__(self) -> None:
-        pass
+    class Book():
+        def __init__(self):
+            pass
+
+        def go(self):
+            pass
+
+    class Chapter():
+        def __init__(self):
+            pass
+
+    class Sermon():     #result of BeautifulSoup.find or .findall
+        def __init__(self):
+            pass
+
+        def download(self):
+            pass
+
+        def name(self):
+            pass
