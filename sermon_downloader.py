@@ -6,6 +6,8 @@ from loguru import logger
 import sys
 
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 class SermonDownloader():
     def __init__(self, debug=False):
@@ -14,13 +16,16 @@ class SermonDownloader():
 
     class GTYDriver(webdriver.Firefox):
         def __init__(self, debug=False):
-            defaultlink = "https://www.gty.org/library/resources/sermons-library"
+            self.defaultlink = "https://www.gty.org/library/resources/sermons-library"
             options = webdriver.FirefoxOptions()
             if debug == False:
                 options.add_argument('--headless')
             super().__init__(options=options)
-            logger.info(f"WebDriver started")
-            self.get(defaultlink)
+            logger.info("WebDriver started")
+            self.implicitly_wait(10)
+            logger.info("Waiting implicitly for driver to load all elements")
+            self.get(self.defaultlink)
+            logger.info("Finished waiting")
     
     class GTYParser(BeautifulSoup):
         def __init__(self, source) -> None:
