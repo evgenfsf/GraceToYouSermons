@@ -12,11 +12,13 @@ from selenium.webdriver.support import expected_conditions as EC
 class SermonDownloader():
     def __init__(self, debug=False):
         self.driver = self.GTYDriver(debug)
+        self.baseurl = self.driver.baseurl
         self.parser = self.GTYParser(self.driver.page_source)
+        self.book_dict = self.return_book_dict()
 
     class GTYDriver(webdriver.Firefox):
         def __init__(self, debug=False):
-            self.defaultlink = "https://www.gty.org/library/resources/sermons-library"
+            self.baseurl = "https://www.gty.org/library/resources/sermons-library/scripture"
             options = webdriver.FirefoxOptions()
             if debug == False:
                 options.add_argument('--headless')
@@ -24,20 +26,41 @@ class SermonDownloader():
             logger.info("WebDriver started")
             self.implicitly_wait(10)
             logger.info("Waiting implicitly for driver to load all elements")
-            self.get(self.defaultlink)
+            self.get(self.baseurl)
             logger.info("Finished waiting")
     
     class GTYParser(BeautifulSoup):
         def __init__(self, source) -> None:
             super().__init__(source, features="html.parser")
-            logger.info(f"Parser started")
+            logger.info(f"Parser created")
             
     def current_page(self):
-        return Page(self.parser.findAll(class_='gty-asset store-library sermon'))
+        self.parser = self.GTYParser(self.driver.page_source)
+        sermons = self.parser.findAll(class_="gty-asset store-library sermon")
+        pagination = self.parser.find("ul", class_="pagination")
+        pg_n = pagination.find(class_="active").a.string
+        last_chevron = pagination.find("i", class_="mdi-navigation-chevron-right").parent.parent
+        return Page(sermons, pg_n, last_chevron)
     
-    def download_book(self, title):
-        book_select = self.driver.find_element(By.CLASS_NAME, "col s8 l5").find_element(By.NAME, "select")
-        book_select.click()
+    def return_book_dict(self):
+        selector = self.driver.find_element(By.CLASS_NAME, "col.s8.l5").find_element(By.TAG_NAME, "select")
+        options = selector.find_elements(By.TAG_NAME, "option")
+        return {book.get_attribute("textContent"):book.get_attribute("value") for book in options}
+    
+    def download_book(self, name, pg=0):    
+        # "https://www.gty.org/library/resources/sermons-library/scripture/1?book=1&chapter=0"
+        bk_n = self.book_dict[name]
+        ch_n = 0 #0 means all chapters
+        pg_n = pg
+        while True:
+            self.driver.get(f"{self.baseurl}/{pg_n}?book={bk_n}&chapter={ch_n}")
+            current = self.current_page()
+            if current.is_last():
+                break
+    
+    
+    def download_all_books(self):
+        pass
     
     def quit(self):
         self.GTYDriver.quit()
@@ -56,15 +79,19 @@ class Chapter():
         pass
         
 class Page():
-    def __init__(self, content, order=1): #1 page by default
+    def __init__(self, content, page_num, chevron):
         self.content = content
-        self.order = order
+        self.pn = page_num
+        self.ch = chevron
         
     def download(self):
         with requests.Session() as session:     #a requests Session per page, useful to safely dispose resources
             for sermon in self.content:
                 with Sermon(sermon) as s:
                     s.download(session)
+    
+    def is_last(self):
+        return True if self.ch["class"][0] == "disabled" else False
 
 
 class Sermon(): 
