@@ -5,16 +5,19 @@ import re
 from loguru import logger
 import sys
 
+from selenium.webdriver.common.by import By
+
 class SermonDownloader():
-    def __init__(self):
-        self.driver = self.GTYDriver()
+    def __init__(self, debug=False):
+        self.driver = self.GTYDriver(debug)
         self.parser = self.GTYParser(self.driver.page_source)
 
     class GTYDriver(webdriver.Firefox):
-        def __init__(self):
+        def __init__(self, debug=False):
             defaultlink = "https://www.gty.org/library/resources/sermons-library"
             options = webdriver.FirefoxOptions()
-            options.add_argument('--headless')
+            if debug == False:
+                options.add_argument('--headless')
             super().__init__(options=options)
             logger.info(f"WebDriver started")
             self.get(defaultlink)
@@ -27,28 +30,33 @@ class SermonDownloader():
     def current_page(self):
         return Page(self.parser.findAll(class_='gty-asset store-library sermon'))
     
+    def download_book(self, title):
+        book_select = self.driver.find_element(By.CLASS_NAME, "col s8 l5").find_element(By.NAME, "select")
+        book_select.click()
+    
     def quit(self):
         self.GTYDriver.quit()
         logger.info("Driver Stopped")
         sys.exit()
 
 class Book():
-    def __init__(self):
-        pass
+    def __init__(self, name):
+        self.name = name
 
-    def go(self):
-        pass
+    def download(self):
+        pass        
 
 class Chapter():
     def __init__(self):
         pass
         
 class Page():
-    def __init__(self, content):
+    def __init__(self, content, order=1): #1 page by default
         self.content = content
+        self.order = order
         
     def download(self):
-        with requests.Session() as session:
+        with requests.Session() as session:     #a requests Session per page, useful to safely dispose resources
             for sermon in self.content:
                 with Sermon(sermon) as s:
                     s.download(session)
