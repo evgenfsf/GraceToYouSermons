@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import re
 from loguru import logger
 import sys
+import os
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
@@ -37,7 +38,7 @@ class SermonDownloader():
     def current_page(self):
         self.parser = self.GTYParser(self.driver.page_source)
         sermons = self.parser.findAll(class_="gty-asset store-library sermon")
-        pagination = self.parser.find("ul", class_="pagination")
+        pagination = self.parser.find("div", class_="col s12 m7").find("ul", class_="pagination")
         pg_n = pagination.find(class_="active").a.string
         last_chevron = pagination.find("i", class_="mdi-navigation-chevron-right").parent.parent
         return Page(sermons, pg_n, last_chevron)
@@ -52,11 +53,19 @@ class SermonDownloader():
         bk_n = self.book_dict[name]
         ch_n = 0 #0 means all chapters
         pg_n = pg
+        logger.info(f"Creating folder: {name}")
+        os.mkdir(name)
+        os.chdir(name)
         while True:
+            logger.info(f"Page {pg_n}")
             self.driver.get(f"{self.baseurl}/{pg_n}?book={bk_n}&chapter={ch_n}")
             current = self.current_page()
+            current.download()
             if current.is_last():
+                logger.info("Reached last page.")
                 break
+            pg_n += 1
+        os.chdir(os.pardir)
     
     
     def download_all_books(self):
