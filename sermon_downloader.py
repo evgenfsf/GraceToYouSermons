@@ -82,7 +82,8 @@ class SermonDownloader():
     
     
     def download_all_books(self):
-        pass
+        for book in self.book_dict.keys():
+            self.download_book(book)
     
     def quit(self):
         self.GTYDriver.quit()
