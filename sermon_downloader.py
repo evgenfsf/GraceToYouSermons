@@ -9,6 +9,7 @@ import os
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 class SermonDownloader():
     def __init__(self, debug=False):
@@ -38,7 +39,8 @@ class SermonDownloader():
     def current_page(self):
         self.parser = self.GTYParser(self.driver.page_source)
         sermons = self.parser.findAll(class_="gty-asset store-library sermon")
-        pagination = self.parser.find("div", class_="col s12 m7").find("ul", class_="pagination")
+        pagination_source = self.driver.find_element(By.CLASS_NAME, "col.s12.m7").find_element(By.CLASS_NAME, "pagination")
+        pagination = self.GTYParser(pagination_source.get_attribute("outerHTML"))
         pg_n = pagination.find(class_="active").a.string
         last_chevron = pagination.find("i", class_="mdi-navigation-chevron-right").parent.parent
         return Page(sermons, pg_n, last_chevron)
@@ -48,7 +50,7 @@ class SermonDownloader():
         options = selector.find_elements(By.TAG_NAME, "option")
         return {book.get_attribute("textContent"):book.get_attribute("value") for book in options}
     
-    def download_book(self, name, pg=0):    
+    def download_book(self, name, pg=1):    
         # "https://www.gty.org/library/resources/sermons-library/scripture/1?book=1&chapter=0"
         bk_n = self.book_dict[name]
         ch_n = 0 #0 means all chapters
@@ -58,7 +60,18 @@ class SermonDownloader():
         os.chdir(name)
         while True:
             logger.info(f"Page {pg_n}")
-            self.driver.get(f"{self.baseurl}/{pg_n}?book={bk_n}&chapter={ch_n}")
+            full_url=f"{self.baseurl}/{pg_n}?book={bk_n}&chapter={ch_n}"
+            logger.info(f"Driver get: {full_url}")
+            while True:
+                try:
+                    self.driver.get(full_url)
+                    condition = WebDriverWait(self.driver, 10).until(EC.url_to_be(full_url))
+                    if condition:
+                        break
+                except TimeoutException:
+                    logger.info("Timeout, retrying...")
+                    continue
+                    
             current = self.current_page()
             current.download()
             if current.is_last():
