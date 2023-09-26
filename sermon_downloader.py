@@ -1,7 +1,6 @@
 import requests
 from selenium import webdriver
 from bs4 import BeautifulSoup
-import re
 from loguru import logger
 import sys
 import os
@@ -154,8 +153,3 @@ class Sermon():
     def name(self):
         pass
     
-
-        
-        
-
-#download all sermons from default page
