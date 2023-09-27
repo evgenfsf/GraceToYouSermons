@@ -81,8 +81,13 @@ class SermonDownloader():
     
     
     def download_all_books(self):
+        dirname = "GraceToYouSermons"  #for now
+        os.mkdir(dirname)
+        os.chdir(dirname)
         for book in self.book_dict.keys():
             self.download_book(book)
+        os.chdir(os.pardir)
+        
     
     def quit(self):
         self.GTYDriver.quit()
