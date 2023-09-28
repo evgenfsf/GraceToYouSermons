@@ -96,7 +96,7 @@ class SermonDownloader():
         
     
     def quit(self):
-        self.GTYDriver.quit()
+        self.driver.quit()
         logger.info("Driver Stopped")
         sys.exit()
 
