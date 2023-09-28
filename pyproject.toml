@@ -13,3 +13,5 @@ dependencies = [
     "click"
 ]
 
+[project.scripts]
+gtydownload = "gtysermons.scripts:download"
