@@ -3,7 +3,7 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "grace_to_you_sermons"
+name = "gtysermons"
 version = "0.0.1"
 dependencies = [
     "requests",
@@ -13,3 +13,8 @@ dependencies = [
     "click"
 ]
 
+[project.scripts]
+gtydownload = "gtysermons.scripts:download"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
