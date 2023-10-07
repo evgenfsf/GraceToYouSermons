@@ -3,3 +3,5 @@ geckodriver.log
 .vscode/settings.json
 *.zip
 __pycache__
+venv
+*.egg-info
