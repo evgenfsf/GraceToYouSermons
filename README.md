@@ -46,10 +46,10 @@ Run via command-line using the `gtysermons` CLI:
 
 ```bash
 # Download all sermons from all books
-python -m gtysermons.scripts --all
+gtydownload --all
 
 # Download sermons from a specific book (e.g., Genesis)
-python -m gtysermons.scripts --book Genesis
+gtydownload --book Genesis
 ```
 
 📂 Output structure:
