@@ -11,6 +11,24 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
+class GTYDriver(webdriver.Firefox):
+    def __init__(self, debug=False):
+        self.baseurl = "https://www.gty.org/sermons/archive?tab=scripture"
+        options = webdriver.FirefoxOptions()
+        if debug == False:
+            options.add_argument('--headless')
+        super().__init__(options=options)
+        logger.info("WebDriver started")
+        self.implicitly_wait(10)
+        logger.info("Waiting implicitly for driver to load all elements")
+        self.get(self.baseurl)
+        logger.info("Finished waiting")
+
+class GTYParser(BeautifulSoup):
+    def __init__(self, source) -> None:
+        super().__init__(source, features="html.parser")
+        logger.info(f"Parser created")
+
 class SermonDownloader():
     def __init__(self, debug=False):
         self.driver = self.GTYDriver(debug)
@@ -18,23 +36,7 @@ class SermonDownloader():
         self.parser = self.GTYParser(self.driver.page_source)
         self.book_dict = self.return_book_dict()
 
-    class GTYDriver(webdriver.Firefox):
-        def __init__(self, debug=False):
-            self.baseurl = "https://www.gty.org/library/resources/sermons-library/scripture"
-            options = webdriver.FirefoxOptions()
-            if debug == False:
-                options.add_argument('--headless')
-            super().__init__(options=options)
-            logger.info("WebDriver started")
-            self.implicitly_wait(10)
-            logger.info("Waiting implicitly for driver to load all elements")
-            self.get(self.baseurl)
-            logger.info("Finished waiting")
-    
-    class GTYParser(BeautifulSoup):
-        def __init__(self, source) -> None:
-            super().__init__(source, features="html.parser")
-            logger.info(f"Parser created")
+
             
     def current_page(self):
         self.parser = self.GTYParser(self.driver.page_source)
