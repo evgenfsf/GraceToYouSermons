@@ -1,15 +1,15 @@
 import requests
 from selenium import webdriver
 from bs4 import BeautifulSoup
-from bs4.element import Tag
 from loguru import logger
 import sys
 import os
+import time
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
 
 class GTYDriver(webdriver.Firefox):
     def __init__(self, debug=False):
@@ -19,82 +19,106 @@ class GTYDriver(webdriver.Firefox):
             options.add_argument('--headless')
         super().__init__(options=options)
         logger.info("WebDriver started")
-        self.implicitly_wait(10)
-        logger.info("Waiting implicitly for driver to load all elements")
+        self._load_base_page()
+
+    def _load_base_page(self):
+        logger.info(f"Navigating to {self.baseurl}")
         self.get(self.baseurl)
-        logger.info("Finished waiting")
+        logger.info("Waiting for sermon content to load...")
+        self.wait_for_sermon_content_change()
+        logger.info("Initial sermon content loaded.")
+
+    def wait_for_sermon_content_change(self, previous_html=None, timeout=10):
+        logger.debug("Waiting for sermon content to change...")
+        
+        def has_changed(d):
+            try:
+                current = d.find_element(By.CLASS_NAME, "media-card-noimg--info").get_attribute("innerHTML")
+                if previous_html is None:
+                    changed = current.strip() != ""
+                    logger.debug(f"[Initial Load] Content loaded: {'Yes' if changed else 'No'}")
+                    return changed
+                else:
+                    changed = current != previous_html
+                    logger.debug(f"[Content Change] Changed: {'Yes' if changed else 'No'}")
+                    return changed
+            except Exception as e:
+                logger.error(f"Error while checking content change: {e}")
+                return False
+
+        try:
+            WebDriverWait(self, timeout).until(has_changed)
+            logger.success("✅ Sermon content successfully changed.")
+        except Exception as e:
+            logger.error(f"❌ Timeout waiting for content change: {e}")    
 
 class GTYParser(BeautifulSoup):
     def __init__(self, source) -> None:
         super().__init__(source, features="html.parser")
         logger.info(f"Parser created")
 
+class BookSelector():
+    def __init__(self, element):
+        self.element = element
+        self.select = Select(element)
+
 class SermonDownloader():
     def __init__(self, debug=False):
-        self.driver = self.GTYDriver(debug)
+        self.driver = GTYDriver(debug)
         self.baseurl = self.driver.baseurl
-        self.parser = self.GTYParser(self.driver.page_source)
+        self.book_selector = BookSelector(self.driver.find_element(By.ID, "book-filter"))
+        self.previous_html = None
         self.book_dict = self.return_book_dict()
 
 
-            
-    def current_page(self):
-        self.parser = self.GTYParser(self.driver.page_source)
-        sermons = self.parser.findAll(class_="gty-asset store-library sermon")
-        pagination_source = self.driver.find_element(By.CLASS_NAME, "col.s12.m7").find_element(By.CLASS_NAME, "pagination")
-        pagination = self.GTYParser(pagination_source.get_attribute("outerHTML"))
-        try:
-            pg_n = pagination.find(class_="active").a.string
-            last_chevron = pagination.find("i", class_="mdi-navigation-chevron-right").parent.parent
-        except AttributeError:  #just one page
-            pg_n = 1
-            last_chevron = True
-        return Page(sermons, int(pg_n), last_chevron)
+    # def current_page(self):
+    #     self.parser = self.GTYParser(self.driver.page_source)
+    #     sermons = self.parser.findAll(class_="gty-asset store-library sermon")
+    #     pagination_source = self.driver.find_element(By.CLASS_NAME, "col.s12.m7").find_element(By.CLASS_NAME, "pagination")
+    #     pagination = self.GTYParser(pagination_source.get_attribute("outerHTML"))
+    #     try:
+    #         pg_n = pagination.find(class_="active").a.string
+    #         last_chevron = pagination.find("i", class_="mdi-navigation-chevron-right").parent.parent
+    #     except AttributeError:  #just one page
+    #         pg_n = 1
+    #         last_chevron = True
+    #     return Page(sermons, int(pg_n), last_chevron)
     
-    def return_book_dict(self):
-        selector = self.driver.find_element(By.CLASS_NAME, "col.s8.l5").find_element(By.TAG_NAME, "select")
-        options = selector.find_elements(By.TAG_NAME, "option")
-        return {book.get_attribute("textContent"):book.get_attribute("value") for book in options}
+    def return_book_dict(self):  
+        options = self.book_selector.element.find_elements(By.TAG_NAME, "option")
+        return {book.get_attribute("textContent"): i for i, book in enumerate(options)}
     
-    def download_book(self, name, pg=1):    
-        # "https://www.gty.org/library/resources/sermons-library/scripture/1?book=1&chapter=0"
+
+
+    def download_book(self, name):    
         bk_n = self.book_dict[name]
-        ch_n = 0 #0 means all chapters
-        pg_n = pg
-        logger.info(f"Creating folder: {bk_n}_{name}")
-        os.mkdir(f"{bk_n}_{name}")
-        os.chdir(f"{bk_n}_{name}")
-        while True:
-            logger.info(f"Page {pg_n}")
-            full_url=f"{self.baseurl}/{pg_n}?book={bk_n}&chapter={ch_n}"
-            logger.info(f"Driver get: {full_url}")
-            while True:
-                try:
-                    self.driver.get(full_url)
-                    condition = WebDriverWait(self.driver, 10).until(EC.url_to_be(full_url))
-                    if condition:
-                        break
-                except TimeoutException:
-                    logger.info("Timeout, retrying...")
-                    continue
-                    
-            current = self.current_page()
-            current.download()
-            if current.is_last():
-                logger.info("Reached last page.")
-                break
-            pg_n += 1
+        logger.info(f"Creating folder: {bk_n:02}_{name}")
+        os.makedirs(f"{bk_n:02}_{name}", exist_ok=True) #two digits always
+        os.chdir(f"{bk_n:02}_{name}")
+
+        self.book_selector.select.select_by_value(name)
+        self.driver.wait_for_sermon_content_change(self.previous_html)
+
+        #Save current state
+        container = self.driver.find_element(By.CLASS_NAME, "media-card-noimg--info")
+        self.previous_html = container.get_attribute("innerHTML")
+
+        #Get the entire list of sermons for the book
+        sermon_container__list = self.driver.find_element(By.CLASS_NAME, "blogs-archive--wrapper").find_elements(By.CLASS_NAME, "blogs-archive--item")
+        book = Book(sermon_container__list, name, self.driver)
+        book.download()
+
+        #Remember to move back to the parent dir after book download is finished.
         os.chdir(os.pardir)
     
     
     def download_all_books(self):
         dirname = "GraceToYouSermons"  #for now
-        os.mkdir(dirname)
+        os.makedirs(dirname, exist_ok=True)
         os.chdir(dirname)
         for book in self.book_dict.keys():
             self.download_book(book)
         os.chdir(os.pardir)
-        self.quit()
         
     
     def quit(self):
@@ -103,70 +127,89 @@ class SermonDownloader():
         sys.exit()
 
 class Book():
-    def __init__(self, name):
+    def __init__(self, sermon_list, name, driver):
+        self.driver = driver
+        self.sermon_list = sermon_list
         self.name = name
 
     def download(self):
-        pass        
-
-class Chapter():
-    def __init__(self):
-        pass
+        with requests.Session() as session:     #a requests Session per Book, useful to safely dispose resources
+            for sermon in self.sermon_list:
+                with Sermon(GTYParser(sermon.get_attribute("outerHTML")), self.driver) as s:
+                    s.download(session)  
         
-class Page():
-    def __init__(self, content, page_num, chevron):
-        self.content = content
-        self.pn = page_num
-        self.ch = chevron
-        
-    def download(self):
-        with requests.Session() as session:     #a requests Session per page, useful to safely dispose resources
-            for sermon in self.content:
-                with Sermon(sermon) as s:
-                    s.download(session)
-    
-    def is_last(self):
-        if type(self.ch) == Tag:
-            return True if self.ch["class"][0] == "disabled" else False
-        else: 
-            return self.ch
-
-
 class Sermon(): 
-    def __init__(self, source):
-        """_summary_
+    def __init__(self, source, driver):
+        self.driver = driver
+        # SERMON NAME
+        self.title = source.select_one("h2.media-card-noimg--title").text.strip()
+        # DATE, PASSAGE, CODE
+        info_items = source.select(".resources-bar--no-link")
+        self.date = info_items[0].text.strip()
+        self.scripture = info_items[1].text.strip()
+        self.code = info_items[2].text.strip()
+        # SERMON PAGE LINK (relative)
+        link_rel = source.select_one("a.media-card-noimg--link")["href"]
+        self.link_full = f"https://www.gty.org{link_rel}"
+        self.download_link = self.extract_mp3_url(self.link_full)
 
-        Args:
-            source (bs4.element.Tag): result of BeautifulSoup.find or .findAll
-        """
-        self.title = source.find(class_="title").span.string
-        self.scripture = source.find(class_="scripture").span.string
-        self.code = source.find(class_="code").span.string
         self.filename = self.filename_correct()
-        self.download_server = "https://cdn.gty.org/sermons/High/"
-    
+        logger.debug(f"Creating {self.filename}")
+
+    ## __enter__ and __exit__ to use Sermon in a with statment
     def __enter__(self):
         return self
-    
-    def __exit__(self, ex_type, ex_val, ex_trace):
-        del self
-        
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
     def filename_correct(self):
-        fn = f"{self.scripture}_{self.title}_{self.code}"
-        fn = fn.translate({ord(c): "-" for c in "!@#$%^&*()[]{};:,./<>?\|`~-=_+\""})
+        fn = f"{self.scripture}_{self.title}_{self.date}_{self.code}"
+        fn = fn.translate({ord(c): "_" for c in "!@#$%^&*()[]{};:,./<>?\\|`~-=_+\""})
         return f'{fn}.mp3'
     
-    def download(self, session):
-        link = f"{self.download_server}{self.code}.mp3"
-        logger.info(f"Downloading {link}")
-        download = session.get(link)
-        if download.status_code == 200:
-            logger.success(f"Download Succeeded: {link}")
-            with open(self.filename, 'wb') as f:            #open in binary mode to avoid errors
-                    f.write(download.content)
-            logger.success(f"File Created: {self.filename}")
-        else:   logger.error(f"Download Failed: {self.filename}")
+    def extract_mp3_url(self, sermon_url):
+        # 1. Save the original window
+        original_window = self.driver.current_window_handle
 
-    def name(self):
-        pass
-    
+        # 2. Open a new tab
+        self.driver.execute_script("window.open('');")
+        time.sleep(1)  # small delay for tab to register
+
+        # 3. Switch to the new tab (last one)
+        self.driver.switch_to.window(self.driver.window_handles[-1])
+
+        # 4. Load the sermon page
+        self.driver.get(sermon_url)
+
+        # 5. Extract with BeautifulSoup
+        soup = GTYParser(self.driver.page_source)
+        # Find the <a> tag with both the MP3 label and a .mp3 link
+        mp3_tag = soup.find("a", href=lambda x: x and ".mp3" in x)
+        mp3_url = mp3_tag['href'] if mp3_tag else None
+
+        # 6. Close the tab and switch back
+        self.driver.close()
+        self.driver.switch_to.window(original_window)
+
+        return mp3_url
+
+    def download(self, session):
+        if os.path.exists(self.filename):
+            logger.info(f"File already exists, skipping: {self.filename}")
+            return
+
+        logger.info(f"Downloading {self.download_link}")
+        for _ in range(3):
+            try:
+                download = session.get(self.download_link)
+                if download.status_code == 200:
+                    logger.success(f"Download Succeeded: {self.download_link}")
+                    with open(self.filename, 'wb') as f:            #open in binary mode to avoid errors
+                        f.write(download.content)
+                        logger.success(f"File Created: {self.filename}")
+                    break
+                else:   logger.error(f"Download Failed: {self.filename}")
+                    
+            except Exception as e:
+                logger.warning(f"Retrying due to error: {e}")  
