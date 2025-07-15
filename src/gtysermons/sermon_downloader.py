@@ -14,6 +14,8 @@ from selenium.webdriver.support import expected_conditions as EC
 class GTYDriver(webdriver.Firefox):
     def __init__(self, debug=False):
         self.baseurl = "https://www.gty.org/sermons/archive?tab=scripture"
+        self.previous_html = None
+        self.previous_book = "Genesis"
         options = webdriver.FirefoxOptions()
         if debug == False:
             options.add_argument('--headless')
@@ -25,23 +27,26 @@ class GTYDriver(webdriver.Firefox):
         logger.info(f"Navigating to {self.baseurl}")
         self.get(self.baseurl)
         logger.info("Waiting for sermon content to load...")
-        self.wait_for_sermon_content_change()
+        self.wait_for_sermon_content_change(self.previous_book)
         logger.info("Initial sermon content loaded.")
 
-    def wait_for_sermon_content_change(self, previous_html=None, timeout=10):
+    def wait_for_sermon_content_change(self, book, timeout=10):
         logger.debug("Waiting for sermon content to change...")
-        
+        if self.previous_book == book:
+            self.previous_html = None
         def has_changed(d):
             try:
                 current = d.find_element(By.CLASS_NAME, "media-card-noimg--info").get_attribute("innerHTML")
-                if previous_html is None:
+                
+                if self.previous_html is None:
                     changed = current.strip() != ""
                     logger.debug(f"[Initial Load] Content loaded: {'Yes' if changed else 'No'}")
-                    return changed
                 else:
-                    changed = current != previous_html
+                    changed = current != self.previous_html
                     logger.debug(f"[Content Change] Changed: {'Yes' if changed else 'No'}")
-                    return changed
+                self.previous_html = current
+                self.previous_book = book
+                return changed
             except Exception as e:
                 logger.error(f"Error while checking content change: {e}")
                 return False
@@ -88,8 +93,6 @@ class SermonDownloader():
         options = self.book_selector.element.find_elements(By.TAG_NAME, "option")
         return {book.get_attribute("textContent"): i for i, book in enumerate(options)}
     
-
-
     def download_book(self, name):    
         bk_n = self.book_dict[name]
         logger.info(f"Creating folder: {bk_n:02}_{name}")
@@ -97,11 +100,7 @@ class SermonDownloader():
         os.chdir(f"{bk_n:02}_{name}")
 
         self.book_selector.select.select_by_value(name)
-        self.driver.wait_for_sermon_content_change(self.previous_html)
-
-        #Save current state
-        container = self.driver.find_element(By.CLASS_NAME, "media-card-noimg--info")
-        self.previous_html = container.get_attribute("innerHTML")
+        self.driver.wait_for_sermon_content_change(name)
 
         #Get the entire list of sermons for the book
         sermon_container__list = self.driver.find_element(By.CLASS_NAME, "blogs-archive--wrapper").find_elements(By.CLASS_NAME, "blogs-archive--item")
@@ -135,7 +134,9 @@ class Book():
     def download(self):
         with requests.Session() as session:     #a requests Session per Book, useful to safely dispose resources
             for sermon in self.sermon_list:
-                with Sermon(GTYParser(sermon.get_attribute("outerHTML")), self.driver) as s:
+                html = sermon.get_attribute("outerHTML")  # capture it right away
+                parser = GTYParser(html)
+                with Sermon(parser, self.driver) as s:
                     s.download(session)  
         
 class Sermon(): 
