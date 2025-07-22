@@ -5,6 +5,7 @@ from loguru import logger
 import sys
 import os
 import time
+from .constants import BIBLE_BOOKS_ORDER
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
@@ -91,7 +92,9 @@ class SermonDownloader():
     
     def return_book_dict(self):  
         options = self.book_selector.element.find_elements(By.TAG_NAME, "option")
-        return {book.get_attribute("textContent"): i for i, book in enumerate(options)}
+        return {(book_name := book.get_attribute("textContent")): BIBLE_BOOKS_ORDER[book_name] for book in options}
+
+
     
     def download_book(self, name):    
         bk_n = self.book_dict[name]
