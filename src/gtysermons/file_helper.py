@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 # --- Utility ---
 INVALID_CHARS = {ord(c): "_" for c in r"!@#$%^&*()[]{};:,./<>?\\|`~-=_+\""}
 
-def enforce_path_limit(directory, raw_filename, ext=".mp3", max_path_len=260):
+def enforce_path_limit(directory, raw_filename, ext=".mp3", max_path_len=250):
     """
     Truncate filename if full path is too long.
     - Strips invalid chars
