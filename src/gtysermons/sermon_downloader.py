@@ -13,8 +13,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, WebDriverException, StaleElementReferenceException
 
+logger.add("gtydownload_{time}.log")
 
 class ContentNotFound(Exception):
     """Raised when sermon content element is missing and should skip section."""
@@ -67,6 +68,7 @@ class SermonDownloaderFactory():
     def __init__(self, debug = False):
         self.debug = debug
         self.driver = GTYDriver(debug=debug)
+        self.driver.implicitly_wait(5)
 
     def get_downloader(self, type):
         if type == "date":
@@ -91,28 +93,39 @@ class SermonDownloaderFactory():
         return SermonDownloader(url=url, driver = self.driver, selector=selector, helper=helper, init_item=init_item, debug=self.debug)
 
 class WaitUntilSermonContentChanges:
-    def __init__(self, previous_html, item, updater):
+    def __init__(self, previous_html, item, updater, retries=5):
         self.previous_html = previous_html
         self.previous_item = item
         self.updater = updater  # function to update the shared state
+        self.retries = retries
 
     def __call__(self, driver):
-        try:
-            element = driver.find_element(By.CLASS_NAME, "media-card-noimg--info")
-            current = element.get_attribute("innerHTML")
-            if self.previous_html is None:
-                changed = current.strip() != ""
-                logger.debug(f"[Initial Load] Content loaded: {'Yes' if changed else 'No'}")
-            else:
-                changed = current != self.previous_html
-                logger.debug(f"[Content Change] Changed: {'Yes' if changed else 'No'}")
-            #update shared state
-            self.updater(current)
-            return changed
-        except NoSuchElementException:
-            logger.warning(f"Item empty. Skipping {self.previous_item} due to missing content.")
-            #raise a fatal exception to cancel the wait immediately
-            raise ContentNotFound(f"No content for this section.")
+        for attempt in range(self.retries):
+            try:
+                element = driver.find_element(By.CLASS_NAME, "media-card-noimg--info")
+                current = element.get_attribute("innerHTML")
+
+                if self.previous_html is None:
+                    changed = current.strip() != ""
+                    logger.debug(f"[Initial Load] Content loaded: {'Yes' if changed else 'No'}")
+                else:
+                    changed = current != self.previous_html
+                    logger.debug(f"[Content Change] Changed: {'Yes' if changed else 'No'}")
+
+                if changed:
+                    self.updater(current)
+                return changed
+
+            except NoSuchElementException:
+                logger.warning(f"Item empty. Skipping {self.previous_item} due to missing content.")
+                raise ContentNotFound(f"No content for this section.")
+
+            except StaleElementReferenceException:
+                logger.warning(f"Stale element detected (attempt {attempt + 1}/{self.retries}). Retrying...")
+                time.sleep(0.5)  # brief pause before retry
+
+        logger.error(f"Stale element persisted after {self.retries} attempts.")
+        raise StaleElementReferenceException(f"Failed to access element due to repeated staleness.")
 
 
 class SermonDownloader():
@@ -148,7 +161,7 @@ class SermonDownloader():
             logger.debug("ContentNotFound triggered in wait_for_sermon_content_change")
             raise  # propagates up to download_section()
         except Exception as e:
-            logger.error(f"❌ Timeout waiting for content change: {e}")
+            logger.error(f"❌ Error: {e}")
             raise
 
 
@@ -161,6 +174,7 @@ class SermonDownloader():
             self.wait_for_sermon_content_change(val)
         except ContentNotFound:
             logger.debug("Triggered ContentNotFound in download_section")
+            os.chdir(os.pardir)
             return #warning logged in wait_for_sermon_content_change()
         #Get the entire list of sermons for the book
         sermon_container_list = self.driver.find_element(By.CLASS_NAME, "blogs-archive--wrapper").find_elements(By.CLASS_NAME, "blogs-archive--item")
@@ -230,24 +244,35 @@ class Sermon():
         pass
     
     def extract_mp3_url(self, sermon_url):
-        #Save the original window
-        original_window = self.driver.current_window_handle
-        #Open a new tab
-        self.driver.execute_script("window.open('');")
-        time.sleep(1)  # small delay for tab to register
-        self.driver.switch_to.window(self.driver.window_handles[-1])
+        for attempt in range(5):
+            try:
+                #Save the original window
+                original_window = self.driver.current_window_handle
+                #Open a new tab
+                self.driver.execute_script("window.open('');")
+                time.sleep(2)  # small delay for tab to register
+                self.driver.switch_to.window(self.driver.window_handles[-1])
 
-        self.driver.get(sermon_url)
-        soup = GTYParser(self.driver.page_source)
-        #Find the <a> tag with a .mp3 link
-        mp3_tag = soup.find("a", href=lambda x: x and ".mp3" in x)
-        mp3_url = mp3_tag['href'] if mp3_tag else None
+                self.driver.get(sermon_url)
+                soup = GTYParser(self.driver.page_source)
+                #Find the <a> tag with a .mp3 link
+                mp3_tag = soup.find("a", href=lambda x: x and ".mp3" in x)
+                mp3_url = mp3_tag['href'] if mp3_tag else None
+                if mp3_url:
+                    return mp3_url
 
-        #Close the tab and switch back
-        self.driver.close()
-        self.driver.switch_to.window(original_window)
-
-        return mp3_url
+            except WebDriverException as e:
+                logger.error(f"Selenium error loading sermon page (attempt {attempt+1}): {e}")
+            except TimeoutError as e:
+                logger.error(f"Selenium error loading sermon page (attempt {attempt+1}): {e}")
+            finally:
+                #Close the tab and switch back
+                if len(self.driver.window_handles) > 1:
+                    self.driver.close()
+                self.driver.switch_to.window(original_window)
+        logger.error(f"Failed to load sermon page after max attempts: {sermon_url}")
+        raise TimeoutError
+        
 
     def download(self, session):
         if os.path.exists(self.filename):
@@ -255,7 +280,7 @@ class Sermon():
             return
 
         logger.info(f"Downloading {self.download_link}")
-        for _ in range(3):
+        for _ in range(5):
             try:
                 download = session.get(self.download_link)
                 if download.status_code == 200:

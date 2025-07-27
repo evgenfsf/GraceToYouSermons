@@ -6,9 +6,15 @@ import click
 @click.option("-t", "--type", "type_", required=True, help="Select from 'book', 'title', or 'date'")
 def download(all_, type_):
     if all_:
-        print(f"type = {type_}")
-        factory = SermonDownloaderFactory()
-        sd = factory.get_downloader(type_)
-        sd.download_all()
+        try:
+            print(f"type = {type_}")
+            factory = SermonDownloaderFactory()
+            sd = factory.get_downloader(type_)
+            sd.download_all()
+        except:
+            pass
+        finally:
+            factory.driver.quit()
+
     # if book:
     #     sd = factory.get_downloader()
